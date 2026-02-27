@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Desk Ticket Helper",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Cria tickets em lote (0mn.io) e fecha todos os tickets capturados no Desk.",
   "icons": {
     "16": "img/icon16.png",
