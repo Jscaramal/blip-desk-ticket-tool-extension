@@ -1,0 +1,15 @@
+body { margin: 0; font-family: Arial, sans-serif; }
+.wrap { width: 380px; padding: 12px; }
+h1 { font-size: 16px; margin: 0 0 10px; }
+.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+label { font-size: 12px; display: flex; gap: 6px; align-items: center; }
+input { width: 70px; padding: 4px; }
+button { padding: 8px 10px; cursor: pointer; border: 1px solid #ddd; background: #f7f7f7; border-radius: 6px; }
+button:hover { background: #eee; }
+button.danger { border-color: #ffb3b3; background: #ffecec; }
+pre { background: #111; color: #0f0; padding: 8px; border-radius: 8px; height: 160px; overflow: auto; font-size: 11px; }
+hr { border: none; border-top: 1px solid #ddd; margin: 10px 0; }
+
+/* inputs maiores */
+#apiKeyInput { width: 270px; }
+#botInput { width: 140px; }

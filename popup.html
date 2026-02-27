@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Desk Ticket Helper</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Desk Ticket Helper</h1>
+
+    <div class="row">
+      <label>
+        API Key:
+        <input id="apiKeyInput" type="password" placeholder="cole aqui" />
+      </label>
+    </div>
+
+    <div class="row">
+      <label>
+        Bot:
+        <input id="botInput" type="text" placeholder="ex: scarathuhmg" />
+      </label>
+      <button id="btnSaveConfig">Salvar</button>
+    </div>
+
+    <hr />
+
+    <div class="row">
+      <button id="btnCreateOne">Criar 1 ticket</button>
+    </div>
+
+    <div class="row">
+      <label>
+        Quantidade:
+        <input id="qty" type="number" min="1" max="500" value="10" />
+      </label>
+      <label>
+        Lote:
+        <input id="batchSize" type="number" min="1" max="50" value="10" />
+      </label>
+      <label>
+        Delay (ms):
+        <input id="delayMs" type="number" min="0" max="10000" value="400" />
+      </label>
+      <button id="btnCreateMany">Criar N (em lotes)</button>
+    </div>
+
+    <hr />
+
+    <div class="row">
+      <button id="btnProbe">Testar captura (agent/tickets)</button>
+    </div>
+
+    <pre id="log"></pre>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>

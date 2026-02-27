@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Desk Ticket Helper",
+  "version": "0.2.0",
+  "description": "Cria tickets em lote (0mn.io) e fecha todos os tickets capturados no Desk.",
+  "action": {
+    "default_title": "Desk Ticket Helper",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.blip.ai/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
