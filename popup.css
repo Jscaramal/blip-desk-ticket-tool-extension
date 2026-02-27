@@ -1,15 +1,262 @@
-body { margin: 0; font-family: Arial, sans-serif; }
-.wrap { width: 380px; padding: 12px; }
-h1 { font-size: 16px; margin: 0 0 10px; }
-.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-label { font-size: 12px; display: flex; gap: 6px; align-items: center; }
-input { width: 70px; padding: 4px; }
-button { padding: 8px 10px; cursor: pointer; border: 1px solid #ddd; background: #f7f7f7; border-radius: 6px; }
-button:hover { background: #eee; }
-button.danger { border-color: #ffb3b3; background: #ffecec; }
-pre { background: #111; color: #0f0; padding: 8px; border-radius: 8px; height: 160px; overflow: auto; font-size: 11px; }
-hr { border: none; border-top: 1px solid #ddd; margin: 10px 0; }
+/* ===== Base ===== */
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+}
 
-/* inputs maiores */
-#apiKeyInput { width: 270px; }
-#botInput { width: 140px; }
+* {
+  box-sizing: border-box;
+}
+
+.wrap {
+  width: 360px;
+  padding: 10px;
+}
+
+h1 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+/* ===== Linhas padrão (API Key / Bot) =====
+   Grid: label | input+copy | botão (ex: Salvar)
+*/
+.row {
+  display: grid;
+  grid-template-columns: 58px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+/* Linha só com botão (Criar 1 ticket) */
+.row:has(#btnCreateOne) {
+  grid-template-columns: 1fr;
+}
+
+/* Linha só com algum botão simples (se precisar no futuro) */
+.row:has(#btnCreateOne) button {
+  justify-self: start;
+}
+
+/* Labels */
+label {
+  font-size: 11px;
+  min-width: 0;
+  line-height: 1.1;
+  display: block;
+}
+
+/* Inputs */
+input {
+  width: 100%;
+  padding: 6px 8px;
+  min-width: 0;
+}
+
+/* Botões */
+button {
+  padding: 8px 10px;
+  cursor: pointer;
+  border: 1px solid #ddd;
+  background: #f7f7f7;
+  border-radius: 6px;
+}
+
+button:hover {
+  background: #eee;
+}
+
+button.danger {
+  border-color: #ffb3b3;
+  background: #ffecec;
+}
+
+/* Log */
+pre {
+  background: #111;
+  color: #0f0;
+  padding: 6px;
+  border-radius: 8px;
+  height: 120px;
+  overflow: auto;
+  font-size: 10px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 10px 0;
+}
+
+/* ===== Inputs maiores ===== */
+#apiKeyInput {
+  width: 100%;
+}
+
+#botInput {
+  width: 100%;
+}
+
+/* ===== Input com botão copiar ===== */
+.input-with-copy {
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Botão copiar */
+.btn-copy {
+  padding: 6px 0;
+  font-size: 11px;
+  min-width: 34px;
+  height: 30px;
+}
+
+/* Botão salvar (fica na 3ª coluna do grid) */
+.btn-save {
+  height: 30px;
+  padding: 6px 10px;
+  font-size: 11px;
+  margin-left: 0; /* tira o auto antigo */
+}
+
+.btn-save.pending {
+  background: #5ec2ff;
+  border-color: #44b7fb;
+  color: #073b5a;
+}
+
+.btn-save:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* ===== Botão "Criar 1 ticket" ===== */
+#btnCreateOne {
+  background: #e6f4ff;
+  border-color: #b8ddff;
+}
+
+#btnCreateOne:hover {
+  background: #d7ecff;
+}
+
+/* ===== Bloco: Quantidade/Lote/Delay + Ícone =====
+   Grid: controles | imagem
+*/
+.row-create-with-icon {
+  display: grid;
+  grid-template-columns: 1fr 124px;
+  gap: 12px;
+  align-items: start;
+  margin-top: 6px;
+}
+
+/* Controles em coluna, cada linha: texto | input */
+.create-controls {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.create-controls label {
+  display: grid;
+  grid-template-columns: 90px 1fr; /* texto | input */
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+}
+
+/* inputs compactos: mantém pequeno, mas consistente */
+.input-compact {
+  width: 100%;
+  max-width: 70px;
+  padding: 6px 8px;
+}
+
+/* botão Criar N */
+.btn-create-many {
+  height: 32px;
+  font-size: 11px;
+  padding: 6px 10px;
+  width: fit-content;
+  justify-self: start;
+}
+
+/* Card do ícone */
+.side-icon-card {
+  width: 124px;
+  min-height: 170px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  display: flex;
+  align-items: flex-start; /* topo */
+  justify-content: center;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.side-icon-card img {
+  width: 112px;
+  height: 140px;
+  object-fit: contain;
+  margin-top: 0; /* remove o -20px */
+}
+
+/* ===== Linha de ações (Testar / Fechar todos) ===== */
+.row-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.row-actions button {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 8px 6px;
+  white-space: nowrap;
+}
+
+/* Botão fechar todos */
+.btn-close {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: #fff;
+}
+
+.btn-close:hover {
+  background-color: #c62f3e;
+}
+
+/* ===== Loading spinner (mantido do seu CSS) ===== */
+.btn-close.loading,
+button.loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+button.loading .spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

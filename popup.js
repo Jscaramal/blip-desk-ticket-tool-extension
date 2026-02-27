@@ -1,4 +1,10 @@
 const logEl = document.getElementById("log");
+const apiKeyInput = document.getElementById("apiKeyInput");
+const botInput = document.getElementById("botInput");
+const btnSaveConfig = document.getElementById("btnSaveConfig");
+const btnCloseAll = document.getElementById("btnCloseAll");
+
+let savedConfig = { apiKey: "", botShortName: "" };
 
 function log(msg, obj) {
   const line = obj ? `${msg} ${JSON.stringify(obj, null, 2)}` : msg;
@@ -17,20 +23,61 @@ async function sendToBackground(type, payload = {}) {
 
 async function loadConfig() {
   const { apiKey, botShortName } = await chrome.storage.sync.get(["apiKey", "botShortName"]);
-  if (apiKey) document.getElementById("apiKeyInput").value = apiKey;
-  if (botShortName) document.getElementById("botInput").value = botShortName;
+  if (apiKey) apiKeyInput.value = apiKey;
+  if (botShortName) botInput.value = botShortName;
+  savedConfig = { apiKey: apiKeyInput.value.trim(), botShortName: botInput.value.trim() };
+  updateSaveButtonState();
 }
 
-document.getElementById("btnSaveConfig").addEventListener("click", async () => {
+function updateSaveButtonState() {
+  const current = { apiKey: apiKeyInput.value.trim(), botShortName: botInput.value.trim() };
+  const hasChanges = current.apiKey !== savedConfig.apiKey || current.botShortName !== savedConfig.botShortName;
+
+  btnSaveConfig.disabled = !hasChanges;
+  btnSaveConfig.classList.toggle("pending", hasChanges);
+}
+
+async function copyToClipboard(text, successMsg) {
+  if (!text) {
+    log("ERRO:", { message: "Nada para copiar." });
+    return;
+  }
+
+  await navigator.clipboard.writeText(text);
+  log(successMsg);
+}
+
+btnSaveConfig.addEventListener("click", async () => {
   try {
-    const apiKey = document.getElementById("apiKeyInput").value.trim();
-    const botShortName = document.getElementById("botInput").value.trim();
+    const apiKey = apiKeyInput.value.trim();
+    const botShortName = botInput.value.trim();
 
     if (!apiKey) throw new Error("API Key vazia.");
     if (!botShortName) throw new Error("Bot short name vazio (ex: scarathuhmg).");
 
     await chrome.storage.sync.set({ apiKey, botShortName });
+    savedConfig = { apiKey, botShortName };
+    updateSaveButtonState();
     log("Config salva:", { botShortName });
+  } catch (e) {
+    log("ERRO:", { message: e.message });
+  }
+});
+
+apiKeyInput.addEventListener("input", updateSaveButtonState);
+botInput.addEventListener("input", updateSaveButtonState);
+
+document.getElementById("btnCopyApiKey").addEventListener("click", async () => {
+  try {
+    await copyToClipboard(apiKeyInput.value.trim(), "API Key copiada para área de transferência.");
+  } catch (e) {
+    log("ERRO:", { message: e.message });
+  }
+});
+
+document.getElementById("btnCopyBot").addEventListener("click", async () => {
+  try {
+    await copyToClipboard(botInput.value.trim(), "Bot copiado para área de transferência.");
   } catch (e) {
     log("ERRO:", { message: e.message });
   }
@@ -48,7 +95,13 @@ document.getElementById("btnCreateOne").addEventListener("click", async () => {
 });
 
 document.getElementById("btnCreateMany").addEventListener("click", async () => {
+  const btnCreateMany = document.getElementById("btnCreateMany");
+  const originalText = btnCreateMany.textContent;
   try {
+    btnCreateMany.disabled = true;
+    btnCreateMany.classList.add("loading");
+    btnCreateMany.innerHTML = '<span class="spinner"></span>Criando...';
+
     const tab = await getActiveTab();
     const qty = Number(document.getElementById("qty").value || 1);
     const batchSize = Number(document.getElementById("batchSize").value || 10);
@@ -60,6 +113,10 @@ document.getElementById("btnCreateMany").addEventListener("click", async () => {
     log("RESPONSE:", res);
   } catch (e) {
     log("ERRO:", { message: e.message });
+  } finally {
+    btnCreateMany.disabled = false;
+    btnCreateMany.classList.remove("loading");
+    btnCreateMany.textContent = originalText;
   }
 });
 
@@ -75,12 +132,17 @@ document.getElementById("btnProbe").addEventListener("click", async () => {
 });
 
 document.getElementById("btnCloseAll").addEventListener("click", async () => {
+  const originalText = btnCloseAll.textContent;
   try {
     const confirmed = confirm("⚠️ ATENÇÃO: Isso vai fechar TODOS os tickets abertos. Deseja continuar?");
     if (!confirmed) {
       log("Operação cancelada pelo usuário.");
       return;
     }
+
+    btnCloseAll.disabled = true;
+    btnCloseAll.classList.add("loading");
+    btnCloseAll.innerHTML = '<span class="spinner"></span>Fechando...';
 
     log("CLICK: CLOSE_ALL_TICKETS");
     const tab = await getActiveTab();
@@ -89,8 +151,15 @@ document.getElementById("btnCloseAll").addEventListener("click", async () => {
       log("AGENTE ATUAL:", { agentIdentity: res.agentIdentity, closedBy: res.closedBy });
     }
     log("RESPONSE:", res);
+
+    await chrome.tabs.reload(tab.id);
+    log("Página recarregada após fechamento de tickets.");
   } catch (e) {
     log("ERRO:", { message: e.message });
+  } finally {
+    btnCloseAll.disabled = false;
+    btnCloseAll.classList.remove("loading");
+    btnCloseAll.textContent = originalText;
   }
 });
 

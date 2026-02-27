@@ -13,18 +13,20 @@
     <h1>Desk Ticket Helper</h1>
 
     <div class="row">
-      <label>
-        API Key:
-        <input id="apiKeyInput" type="password" placeholder="cole aqui" />
-      </label>
+      <label for="apiKeyInput">API Key:</label>
+      <div class="input-with-copy">
+        <input id="apiKeyInput" type="text" placeholder="cole aqui" />
+        <button id="btnCopyApiKey" class="btn-copy" title="Copiar API Key">📋</button>
+      </div>
     </div>
 
     <div class="row">
-      <label>
-        Bot:
+      <label for="botInput">Bot:</label>
+      <div class="input-with-copy">
         <input id="botInput" type="text" placeholder="ex: scarathuhmg" />
-      </label>
-      <button id="btnSaveConfig">Salvar</button>
+        <button id="btnCopyBot" class="btn-copy" title="Copiar Bot">📋</button>
+      </div>
+      <button id="btnSaveConfig" class="btn-save">Salvar</button>
     </div>
 
     <hr />
@@ -33,30 +35,32 @@
       <button id="btnCreateOne">Criar 1 ticket</button>
     </div>
 
-    <div class="row">
-      <label>
-        Quantidade:
-        <input id="qty" type="number" min="1" max="500" value="10" />
-      </label>
-      <label>
-        Lote:
-        <input id="batchSize" type="number" min="1" max="50" value="10" />
-      </label>
-      <label>
-        Delay (ms):
-        <input id="delayMs" type="number" min="0" max="10000" value="400" />
-      </label>
-      <button id="btnCreateMany">Criar N (em lotes)</button>
+    <div class="row row-create-with-icon">
+      <div class="create-controls">
+        <label>
+          Quantidade:
+          <input id="qty" class="input-compact" type="number" min="1" max="500" value="10" />
+        </label>
+        <label>
+          Lote:
+          <input id="batchSize" class="input-compact" type="number" min="1" max="50" value="10" />
+        </label>
+        <label>
+          Delay (ms):
+          <input id="delayMs" class="input-compact" type="number" min="0" max="10000" value="400" />
+        </label>
+        <button id="btnCreateMany" class="btn-create-many">Criar N (em lotes)</button>
+      </div>
+      <div class="side-icon-card" title="Desk Ticket Helper">
+        <img src="img/mage_blip.png" alt="Desk Ticket Helper" />
+      </div>
     </div>
 
     <hr />
 
-    <div class="row">
+    <div class="row row-actions">
       <button id="btnProbe">Testar captura (agent/tickets)</button>
-    </div>
-
-    <div class="row">
-      <button id="btnCloseAll" style="background-color: #dc3545; color: white;">⚠️ Fechar TODOS os tickets</button>
+      <button id="btnCloseAll" class="btn-close">⚠️ Fechar TODOS os tickets</button>
     </div>
 
     <pre id="log"></pre>
