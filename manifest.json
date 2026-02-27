@@ -3,9 +3,20 @@
   "name": "Desk Ticket Helper",
   "version": "0.2.0",
   "description": "Cria tickets em lote (0mn.io) e fecha todos os tickets capturados no Desk.",
+  "icons": {
+    "16": "img/icon16.png",
+    "32": "img/icon32.png",
+    "48": "img/icon48.png",
+    "128": "img/icon128.png"
+  },
   "action": {
     "default_title": "Desk Ticket Helper",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "img/icon16.png",
+      "32": "img/icon32.png",
+      "48": "img/icon48.png"
+    }
   },
   "permissions": [
     "activeTab",

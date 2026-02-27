@@ -1,15 +1,155 @@
 body { margin: 0; font-family: Arial, sans-serif; }
-.wrap { width: 380px; padding: 12px; }
-h1 { font-size: 16px; margin: 0 0 10px; }
-.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
-label { font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.wrap { width: 360px; padding: 10px; }
+h1 { font-size: 15px; margin: 0 0 6px; }
+.row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+label { font-size: 11px; display: flex; gap: 6px; align-items: center; min-width: 56px; }
 input { width: 70px; padding: 4px; }
 button { padding: 8px 10px; cursor: pointer; border: 1px solid #ddd; background: #f7f7f7; border-radius: 6px; }
 button:hover { background: #eee; }
 button.danger { border-color: #ffb3b3; background: #ffecec; }
-pre { background: #111; color: #0f0; padding: 8px; border-radius: 8px; height: 160px; overflow: auto; font-size: 11px; }
-hr { border: none; border-top: 1px solid #ddd; margin: 10px 0; }
+
+#btnCreateOne {
+	background: #e6f4ff;
+	border-color: #b8ddff;
+}
+
+#btnCreateOne:hover {
+	background: #d7ecff;
+}
+pre { background: #111; color: #0f0; padding: 6px; border-radius: 8px; height: 120px; overflow: auto; font-size: 10px; }
+hr { border: none; border-top: 1px solid #ddd; margin: 8px 0; }
 
 /* inputs maiores */
-#apiKeyInput { width: 270px; }
+#apiKeyInput { width: 230px; }
 #botInput { width: 140px; }
+
+.input-compact {
+	width: 38px;
+}
+
+.btn-copy {
+	padding: 2px 2px;
+	font-size: 11px;
+	min-width: 30px;
+}
+
+.input-with-copy {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.btn-save {
+	margin-left: auto;
+}
+
+.btn-save.pending {
+	background: #5ec2ff;
+	border-color: #44b7fb;
+	color: #073b5a;
+}
+
+.btn-save:disabled {
+	opacity: 0.65;
+	cursor: not-allowed;
+}
+
+.row-create-with-icon {
+	flex-wrap: nowrap;
+	align-items: flex-start;
+}
+
+.create-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	flex: 1;
+	min-width: 0;
+}
+
+.create-controls label {
+	margin: 0;
+	line-height: 1.1;
+	gap: 4px;
+}
+
+.create-controls button {
+	margin-top: 2px;
+}
+
+.btn-create-many {
+	padding: 6px 8px;
+    height: 30px;
+	font-size: 11px;
+	width: fit-content;
+	justify-self: start;
+}
+
+.side-icon-card {
+	width: 120px;
+	min-height: 170px;
+	border: 0;
+	border-radius: 8px;
+	background: transparent;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.side-icon-card img {
+	width: 112px;
+	height: 160px;
+	object-fit: contain;
+	margin-top: -20px;
+}
+
+.row-actions {
+	flex-wrap: nowrap;
+}
+
+.row-actions button {
+	flex: 1;
+	min-width: 0;
+	font-size: 11px;
+	padding: 7px 6px;
+	white-space: nowrap;
+}
+
+.btn-close {
+	background-color: #dc3545;
+	border-color: #dc3545;
+	color: #fff;
+}
+
+.btn-close:hover {
+	background-color: #c62f3e;
+}
+
+.btn-close.loading {
+	position: relative;
+	pointer-events: none;
+	opacity: 0.9;
+}
+
+button.loading {
+	position: relative;
+	pointer-events: none;
+	opacity: 0.9;
+}
+
+button.loading .spinner {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border: 2px solid rgba(255, 255, 255, 0.45);
+	border-top-color: #fff;
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+	margin-right: 6px;
+	vertical-align: -2px;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
