@@ -74,4 +74,21 @@ document.getElementById("btnProbe").addEventListener("click", async () => {
   }
 });
 
+document.getElementById("btnCloseAll").addEventListener("click", async () => {
+  try {
+    const confirmed = confirm("⚠️ ATENÇÃO: Isso vai fechar TODOS os tickets abertos. Deseja continuar?");
+    if (!confirmed) {
+      log("Operação cancelada pelo usuário.");
+      return;
+    }
+
+    log("CLICK: CLOSE_ALL_TICKETS");
+    const tab = await getActiveTab();
+    const res = await sendToBackground("CLOSE_ALL_TICKETS", { tabId: tab.id });
+    log("RESPONSE:", res);
+  } catch (e) {
+    log("ERRO:", { message: e.message });
+  }
+});
+
 loadConfig();
