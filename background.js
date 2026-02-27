@@ -120,25 +120,50 @@ function buildCreateTicketCommand(apiKey, customerIdentity) {
   };
 }
 
-// function buildCreateAttendanceCommand(apiKey, customerIdentity) {
-//   return {
-//     url: COMMANDS_BASE_URL,
-//     options: {
-//       method: "POST",
-//       headers: makeHeaders(apiKey),
-//       body: JSON.stringify({
-//         id: crypto.randomUUID(),
-//         to: "postmaster@desk.msging.net",
-//         method: "set",
-//         uri: `/tickets/${customerIdentity}`,
-//         type: "text/plain",
-//         resource: "I need a human!",
-//       }),
-//     },
-//   };
-// }
+function buildGetTicketsCommand(apiKey) {
+  return {
+    url: COMMANDS_BASE_URL,
+    options: {
+      method: "POST",
+      headers: makeHeaders(apiKey),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        to: "postmaster@desk.msging.net",
+        method: "get",
+        uri: "/tickets?$take=100",
+      }),
+    },
+  };
+}
 
-// ---------------- Content script helpers ----------------
+function buildCloseTicketCommand(apiKey, ticketId, closedBy) {
+  return {
+    url: COMMANDS_BASE_URL,
+    options: {
+      method: "POST",
+      headers: makeHeaders(apiKey),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        to: "postmaster@desk.msging.net",
+        method: "set",
+        uri: "/tickets/change-status",
+        type: "application/vnd.iris.ticket+json",
+        resource: {
+          id: ticketId,
+          status: "ClosedAttendant",
+          closedBy: closedBy,
+        },
+      }),
+    },
+  };
+}
+
+function normalizeClosedBy(agentIdentity) {
+  if (!agentIdentity) return agentIdentity;
+  if (agentIdentity.includes("%40") && agentIdentity.endsWith("@blip.ai")) return agentIdentity;
+  return `${encodeURIComponent(agentIdentity)}@blip.ai`;
+}
+
 
 async function getAgentFromTab(tabId) {
   const res = await chrome.tabs.sendMessage(tabId, { type: "GET_AGENT" });
@@ -207,6 +232,57 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           ok: true,
           action: "CREATE_TICKETS",
           created: qty,
+          details: summarizeSettled(settled),
+        });
+        return;
+      }
+
+      if (msg?.type === "CLOSE_ALL_TICKETS") {
+        const { apiKey } = await loadConfigOrThrow();
+        const { tabId } = msg.payload;
+
+        // 1) Obter o agentIdentity do atendente atual
+        const agentIdentity = await getAgentFromTab(tabId);
+        const closedBy = normalizeClosedBy(agentIdentity);
+    
+        // 2) Buscar todos os tickets via API
+        const { url, options } = buildGetTicketsCommand(apiKey);
+        const response = await doFetchOrThrow(url, options);
+
+        if (!response?.resource?.items) {
+          throw new Error("Resposta invalida ao buscar tickets.");
+        }
+
+        const tickets = response.resource.items;
+        const openTickets = tickets.filter(t => !t.closed);
+
+        if (openTickets.length === 0) {
+          sendResponse({
+            ok: true,
+            action: "CLOSE_ALL_TICKETS",
+            message: "Nenhum ticket aberto encontrado.",
+            ticketsFound: tickets.length,
+            ticketsToClose: 0,
+            details: { ok: 0, fail: 0, errors: [] },
+          });
+          return;
+        }
+
+        // 3) Fechar cada ticket aberto em lotes (com closedBy = agente atual)
+        const settled = await runInBatches(openTickets.length, 10, 300, async (idx) => {
+          const ticket = openTickets[idx];
+          const { url, options } = buildCloseTicketCommand(apiKey, ticket.id, closedBy);
+          await doFetchOrThrow(url, options);
+          return { ticketId: ticket.id };
+        });
+
+        sendResponse({
+          ok: true,
+          action: "CLOSE_ALL_TICKETS",
+          agentIdentity: agentIdentity,
+          closedBy: closedBy,
+          ticketsFound: tickets.length,
+          ticketsToClose: openTickets.length,
           details: summarizeSettled(settled),
         });
         return;
