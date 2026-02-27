@@ -164,6 +164,42 @@ function normalizeClosedBy(agentIdentity) {
   return `${encodeURIComponent(agentIdentity)}@blip.ai`;
 }
 
+function normalizeIdentityForCompare(identity) {
+  if (!identity) return "";
+  let normalized;
+  try {
+    normalized = decodeURIComponent(identity).toLowerCase();
+  } catch {
+    normalized = String(identity).toLowerCase();
+  }
+
+  normalized = normalized.trim();
+  normalized = normalized.replace(/@blip\.ai@blip\.ai$/, "@blip.ai");
+
+  return normalized;
+}
+
+function isTicketFromCurrentAgent(ticket, agentIdentity) {
+  const current = normalizeIdentityForCompare(agentIdentity);
+  const fromTicket = normalizeIdentityForCompare(ticket?.agentIdentity);
+  return Boolean(current) && Boolean(fromTicket) && current === fromTicket;
+}
+
+async function closeTicketWithFallback(apiKey, ticketId, closedBy) {
+  try {
+    const withClosedBy = buildCloseTicketCommand(apiKey, ticketId, closedBy);
+    await doFetchOrThrow(withClosedBy.url, withClosedBy.options);
+    return { ticketId, mode: "withClosedBy" };
+  } catch (error) {
+    const withoutClosedBy = buildCloseTicketCommand(apiKey, ticketId, undefined);
+    const body = JSON.parse(withoutClosedBy.options.body);
+    delete body.resource.closedBy;
+    withoutClosedBy.options.body = JSON.stringify(body);
+    await doFetchOrThrow(withoutClosedBy.url, withoutClosedBy.options);
+    return { ticketId, mode: "withoutClosedBy", warning: String(error?.message || error).slice(0, 300) };
+  }
+}
+
 
 async function getAgentFromTab(tabId) {
   const res = await chrome.tabs.sendMessage(tabId, { type: "GET_AGENT" });
@@ -254,27 +290,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         const tickets = response.resource.items;
-        const openTickets = tickets.filter(t => !t.closed);
+        const openTickets = tickets.filter((t) => !t.closed);
+        const agentTickets = openTickets.filter((t) => isTicketFromCurrentAgent(t, agentIdentity));
 
-        if (openTickets.length === 0) {
+        if (agentTickets.length === 0) {
           sendResponse({
             ok: true,
             action: "CLOSE_ALL_TICKETS",
-            message: "Nenhum ticket aberto encontrado.",
+            message: "Nenhum ticket aberto vinculado ao agente atual.",
+            agentIdentity: agentIdentity,
+            closedBy: closedBy,
             ticketsFound: tickets.length,
+            openTicketsFound: openTickets.length,
             ticketsToClose: 0,
+            openTicketsAgentSample: openTickets.slice(0, 5).map((t) => ({
+              id: t.id,
+              agentIdentity: t.agentIdentity,
+              normalizedAgentIdentity: normalizeIdentityForCompare(t.agentIdentity),
+            })),
             details: { ok: 0, fail: 0, errors: [] },
           });
           return;
         }
 
         // 3) Fechar cada ticket aberto em lotes (com closedBy = agente atual)
-        const settled = await runInBatches(openTickets.length, 10, 300, async (idx) => {
-          const ticket = openTickets[idx];
-          const { url, options } = buildCloseTicketCommand(apiKey, ticket.id, closedBy);
-          await doFetchOrThrow(url, options);
-          return { ticketId: ticket.id };
+        const settled = await runInBatches(agentTickets.length, 10, 300, async (idx) => {
+          const ticket = agentTickets[idx];
+          return closeTicketWithFallback(apiKey, ticket.id, closedBy);
         });
+
+        const fallbackCount = settled.filter(
+          (s) => s.status === "fulfilled" && s.value?.mode === "withoutClosedBy"
+        ).length;
 
         sendResponse({
           ok: true,
@@ -282,7 +329,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           agentIdentity: agentIdentity,
           closedBy: closedBy,
           ticketsFound: tickets.length,
-          ticketsToClose: openTickets.length,
+          openTicketsFound: openTickets.length,
+          ticketsToClose: agentTickets.length,
+          fallbackWithoutClosedBy: fallbackCount,
           details: summarizeSettled(settled),
         });
         return;

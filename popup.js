@@ -85,6 +85,9 @@ document.getElementById("btnCloseAll").addEventListener("click", async () => {
     log("CLICK: CLOSE_ALL_TICKETS");
     const tab = await getActiveTab();
     const res = await sendToBackground("CLOSE_ALL_TICKETS", { tabId: tab.id });
+    if (res?.agentIdentity || res?.closedBy) {
+      log("AGENTE ATUAL:", { agentIdentity: res.agentIdentity, closedBy: res.closedBy });
+    }
     log("RESPONSE:", res);
   } catch (e) {
     log("ERRO:", { message: e.message });
