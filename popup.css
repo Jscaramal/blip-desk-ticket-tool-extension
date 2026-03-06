@@ -73,11 +73,58 @@ button.danger {
 }
 
 /* Log */
+.log-panel {
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #111;
+  border: 1px solid #222;
+}
+
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #181818;
+  border-bottom: 1px solid #222;
+}
+
+.log-title {
+  color: #9aa0a6;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.log-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-log-action {
+  min-width: 0;
+  height: 22px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #333;
+  background: #202124;
+  color: #d7dadc;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.btn-log-action:hover {
+  background: #2a2c30;
+}
+
 pre {
+  margin: 0;
   background: #111;
   color: #0f0;
   padding: 6px;
-  border-radius: 8px;
   height: 120px;
   overflow: auto;
   font-size: 10px;
