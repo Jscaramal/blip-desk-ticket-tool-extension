@@ -8,7 +8,7 @@ Uma extensão de navegador poderosa para gerenciar tickets no Blip Desk com efic
 
 ![Chrome](https://img.shields.io/badge/Chrome-Compatible-brightgreen)
 ![Manifest v3](https://img.shields.io/badge/Manifest-v3-blue)
-![Version](https://img.shields.io/badge/Version-0.2.0-blue)
+![Version](https://img.shields.io/badge/Version-1.1.0-blue)
 
 </div>
 

@@ -63,7 +63,16 @@
       <button id="btnCloseAll" class="btn-close">⚠️ Fechar TODOS os tickets</button>
     </div>
 
-    <pre id="log"></pre>
+    <div class="log-panel">
+      <div class="log-toolbar">
+        <span class="log-title">Logs</span>
+        <div class="log-actions">
+          <button id="btnCopyLogs" class="btn-log-action" type="button" title="Copiar todos os logs">Copiar</button>
+          <button id="btnClearLogs" class="btn-log-action" type="button" title="Limpar logs">Limpar</button>
+        </div>
+      </div>
+      <pre id="log"></pre>
+    </div>
   </div>
 
   <script src="popup.js"></script>

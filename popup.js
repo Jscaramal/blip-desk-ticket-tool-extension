@@ -1,50 +1,150 @@
+const LOG_SCOPE = "[DeskTicketHelper][popup]";
 const logEl = document.getElementById("log");
 const apiKeyInput = document.getElementById("apiKeyInput");
 const botInput = document.getElementById("botInput");
 const btnSaveConfig = document.getElementById("btnSaveConfig");
 const btnCloseAll = document.getElementById("btnCloseAll");
+const btnCopyLogs = document.getElementById("btnCopyLogs");
+const btnClearLogs = document.getElementById("btnClearLogs");
 
 let savedConfig = { apiKey: "", botShortName: "" };
+let logEntries = [];
 
-function log(msg, obj) {
-  const line = obj ? `${msg} ${JSON.stringify(obj, null, 2)}` : msg;
-  logEl.textContent = `${new Date().toLocaleTimeString()}  ${line}\n` + logEl.textContent;
+function serializeError(error) {
+  if (!error) {
+    return { message: "Unknown error" };
+  }
+
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  };
+}
+
+function stringifyDetails(details) {
+  if (details == null) return "";
+
+  try {
+    return JSON.stringify(details, null, 2);
+  } catch {
+    return String(details);
+  }
+}
+
+function createLogEntry(level, message, details) {
+  return {
+    timestamp: new Date().toISOString(),
+    level: level.toUpperCase(),
+    message,
+    details: details ?? null,
+  };
+}
+
+function renderLogEntries() {
+  const lines = logEntries
+    .slice()
+    .reverse()
+    .map((entry) => {
+      const formattedDetails = stringifyDetails(entry.details);
+      return formattedDetails
+        ? `${entry.timestamp} [${entry.level}] ${entry.message} ${formattedDetails}`
+        : `${entry.timestamp} [${entry.level}] ${entry.message}`;
+    });
+
+  logEl.textContent = lines.join("\n");
+}
+
+function writeLog(level, message, details) {
+  logEntries.push(createLogEntry(level, message, details));
+  renderLogEntries();
+
+  const consoleMethod = console[level] || console.log;
+  consoleMethod(LOG_SCOPE, message, details ?? "");
+}
+
+function logDebug(message, details) {
+  writeLog("debug", message, details);
+}
+
+function logInfo(message, details) {
+  writeLog("info", message, details);
+}
+
+function logWarn(message, details) {
+  writeLog("warn", message, details);
+}
+
+function logError(message, details) {
+  writeLog("error", message, details);
 }
 
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error("Nenhuma aba ativa encontrada.");
+  if (!tab?.id) {
+    throw new Error("Nenhuma aba ativa encontrada.");
+  }
+
+  logDebug("Resolved active tab", {
+    id: tab.id,
+    url: tab.url,
+    title: tab.title,
+  });
   return tab;
 }
 
 async function sendToBackground(type, payload = {}) {
-  return chrome.runtime.sendMessage({ type, payload });
+  logInfo("Sending message to background", { type, payload });
+  const response = await chrome.runtime.sendMessage({ type, payload });
+  logInfo("Received background response", { type, response });
+  return response;
 }
 
 async function loadConfig() {
   const { apiKey, botShortName } = await chrome.storage.sync.get(["apiKey", "botShortName"]);
   if (apiKey) apiKeyInput.value = apiKey;
   if (botShortName) botInput.value = botShortName;
-  savedConfig = { apiKey: apiKeyInput.value.trim(), botShortName: botInput.value.trim() };
+
+  savedConfig = {
+    apiKey: apiKeyInput.value.trim(),
+    botShortName: botInput.value.trim(),
+  };
+
   updateSaveButtonState();
+  logInfo("Loaded popup config", {
+    hasApiKey: Boolean(savedConfig.apiKey),
+    botShortName: savedConfig.botShortName || null,
+  });
 }
 
 function updateSaveButtonState() {
-  const current = { apiKey: apiKeyInput.value.trim(), botShortName: botInput.value.trim() };
+  const current = {
+    apiKey: apiKeyInput.value.trim(),
+    botShortName: botInput.value.trim(),
+  };
   const hasChanges = current.apiKey !== savedConfig.apiKey || current.botShortName !== savedConfig.botShortName;
 
   btnSaveConfig.disabled = !hasChanges;
   btnSaveConfig.classList.toggle("pending", hasChanges);
+  logDebug("Updated save button state", { hasChanges });
 }
 
-async function copyToClipboard(text, successMsg) {
+async function copyToClipboard(text, successMessage) {
   if (!text) {
-    log("ERRO:", { message: "Nada para copiar." });
-    return;
+    throw new Error("Nada para copiar.");
   }
 
   await navigator.clipboard.writeText(text);
-  log(successMsg);
+  logInfo(successMessage);
+}
+
+function buildStructuredLogExport() {
+  return {
+    exportedAt: new Date().toISOString(),
+    source: "DeskTicketHelper popup",
+    entryCount: logEntries.length,
+    entries: logEntries,
+  };
 }
 
 btnSaveConfig.addEventListener("click", async () => {
@@ -58,9 +158,9 @@ btnSaveConfig.addEventListener("click", async () => {
     await chrome.storage.sync.set({ apiKey, botShortName });
     savedConfig = { apiKey, botShortName };
     updateSaveButtonState();
-    log("Config salva:", { botShortName });
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    logInfo("Config saved", { botShortName, hasApiKey: true });
+  } catch (error) {
+    logError("Failed to save config", { error: serializeError(error) });
   }
 });
 
@@ -69,34 +169,39 @@ botInput.addEventListener("input", updateSaveButtonState);
 
 document.getElementById("btnCopyApiKey").addEventListener("click", async () => {
   try {
-    await copyToClipboard(apiKeyInput.value.trim(), "API Key copiada para área de transferência.");
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    await copyToClipboard(apiKeyInput.value.trim(), "API Key copiada para a area de transferencia.");
+  } catch (error) {
+    logError("Failed to copy API key", { error: serializeError(error) });
   }
 });
 
 document.getElementById("btnCopyBot").addEventListener("click", async () => {
   try {
-    await copyToClipboard(botInput.value.trim(), "Bot copiado para área de transferência.");
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    await copyToClipboard(botInput.value.trim(), "Bot copiado para a area de transferencia.");
+  } catch (error) {
+    logError("Failed to copy bot", { error: serializeError(error) });
   }
 });
 
 document.getElementById("btnCreateOne").addEventListener("click", async () => {
   try {
-    log("CLICK: CREATE 1");
     const tab = await getActiveTab();
-    const res = await sendToBackground("CREATE_TICKETS", { tabId: tab.id, qty: 1, batchSize: 1, delayMs: 0 });
-    log("RESPONSE:", res);
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    const response = await sendToBackground("CREATE_TICKETS", {
+      tabId: tab.id,
+      qty: 1,
+      batchSize: 1,
+      delayMs: 0,
+    });
+    logInfo("Create one ticket completed", response);
+  } catch (error) {
+    logError("Create one ticket failed", { error: serializeError(error) });
   }
 });
 
 document.getElementById("btnCreateMany").addEventListener("click", async () => {
   const btnCreateMany = document.getElementById("btnCreateMany");
   const originalText = btnCreateMany.textContent;
+
   try {
     btnCreateMany.disabled = true;
     btnCreateMany.classList.add("loading");
@@ -107,12 +212,16 @@ document.getElementById("btnCreateMany").addEventListener("click", async () => {
     const batchSize = Number(document.getElementById("batchSize").value || 10);
     const delayMs = Number(document.getElementById("delayMs").value || 400);
 
-    log("CLICK: CREATE MANY", { qty, batchSize, delayMs });
+    logInfo("Starting bulk ticket creation", { qty, batchSize, delayMs, tabId: tab.id });
+    const response = await sendToBackground("CREATE_TICKETS", { tabId: tab.id, qty, batchSize, delayMs });
 
-    const res = await sendToBackground("CREATE_TICKETS", { tabId: tab.id, qty, batchSize, delayMs });
-    log("RESPONSE:", res);
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    if (!response?.ok || response?.details?.fail > 0) {
+      logWarn("Bulk ticket creation finished with warnings", response);
+    } else {
+      logInfo("Bulk ticket creation completed", response);
+    }
+  } catch (error) {
+    logError("Bulk ticket creation failed", { error: serializeError(error) });
   } finally {
     btnCreateMany.disabled = false;
     btnCreateMany.classList.remove("loading");
@@ -122,21 +231,26 @@ document.getElementById("btnCreateMany").addEventListener("click", async () => {
 
 document.getElementById("btnProbe").addEventListener("click", async () => {
   try {
-    log("CLICK: PROBE_CONTEXT");
     const tab = await getActiveTab();
-    const res = await sendToBackground("PROBE_CONTEXT", { tabId: tab.id });
-    log("RESPONSE:", res);
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    const response = await sendToBackground("PROBE_CONTEXT", { tabId: tab.id });
+
+    if (!response?.ok) {
+      logWarn("Probe context returned an error", response);
+    } else {
+      logInfo("Probe context completed", response);
+    }
+  } catch (error) {
+    logError("Probe context failed", { error: serializeError(error) });
   }
 });
 
-document.getElementById("btnCloseAll").addEventListener("click", async () => {
+btnCloseAll.addEventListener("click", async () => {
   const originalText = btnCloseAll.textContent;
+
   try {
-    const confirmed = confirm("⚠️ ATENÇÃO: Isso vai fechar TODOS os tickets abertos. Deseja continuar?");
+    const confirmed = confirm("ATENCAO: Isso vai fechar TODOS os tickets abertos. Deseja continuar?");
     if (!confirmed) {
-      log("Operação cancelada pelo usuário.");
+      logWarn("Close tickets operation cancelled by user");
       return;
     }
 
@@ -144,18 +258,27 @@ document.getElementById("btnCloseAll").addEventListener("click", async () => {
     btnCloseAll.classList.add("loading");
     btnCloseAll.innerHTML = '<span class="spinner"></span>Fechando...';
 
-    log("CLICK: CLOSE_ALL_TICKETS");
     const tab = await getActiveTab();
-    const res = await sendToBackground("CLOSE_ALL_TICKETS", { tabId: tab.id });
-    if (res?.agentIdentity || res?.closedBy) {
-      log("AGENTE ATUAL:", { agentIdentity: res.agentIdentity, closedBy: res.closedBy });
+    logInfo("Starting close all tickets", { tabId: tab.id, url: tab.url });
+
+    const response = await sendToBackground("CLOSE_ALL_TICKETS", { tabId: tab.id });
+    if (response?.agentIdentity || response?.closedBy) {
+      logInfo("Current agent context", {
+        agentIdentity: response.agentIdentity,
+        closedBy: response.closedBy,
+      });
     }
-    log("RESPONSE:", res);
+
+    if (!response?.ok || response?.details?.fail > 0 || response?.fallbackWithoutClosedBy > 0) {
+      logWarn("Close all tickets finished with warnings", response);
+    } else {
+      logInfo("Close all tickets completed", response);
+    }
 
     await chrome.tabs.reload(tab.id);
-    log("Página recarregada após fechamento de tickets.");
-  } catch (e) {
-    log("ERRO:", { message: e.message });
+    logInfo("Tab reloaded after close all tickets", { tabId: tab.id });
+  } catch (error) {
+    logError("Close all tickets failed", { error: serializeError(error) });
   } finally {
     btnCloseAll.disabled = false;
     btnCloseAll.classList.remove("loading");
@@ -163,4 +286,24 @@ document.getElementById("btnCloseAll").addEventListener("click", async () => {
   }
 });
 
-loadConfig();
+btnCopyLogs.addEventListener("click", async () => {
+  try {
+    const exportedLogs = buildStructuredLogExport();
+    await navigator.clipboard.writeText(JSON.stringify(exportedLogs, null, 2));
+    logInfo("Structured logs copied to clipboard", {
+      entryCount: exportedLogs.entryCount,
+    });
+  } catch (error) {
+    logError("Failed to copy structured logs", { error: serializeError(error) });
+  }
+});
+
+btnClearLogs.addEventListener("click", () => {
+  logEntries = [];
+  renderLogEntries();
+  console.info(LOG_SCOPE, "Popup logs cleared");
+});
+
+loadConfig().catch((error) => {
+  logError("Failed to initialize popup", { error: serializeError(error) });
+});

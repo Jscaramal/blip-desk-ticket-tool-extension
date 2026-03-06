@@ -1,32 +1,212 @@
-// background.js (MV3 service worker) — HMG
-// - CREATE_TICKETS: create CRM contact -> create ticket -> create attendance message
-// - PROBE_CONTEXT: reads agentIdentity + ticketCount (from content.js GET_DESK_DATA)
+// background.js (MV3 service worker)
 
-const COMMANDS_BASE_URL = "https://hmg-http.msging.net/commands";
+const COMMANDS_BASE_URLS = {
+  hmg: "https://hmg-http.msging.net/commands",
+  prod: "https://http.msging.net/commands",
+};
+const LOG_SCOPE = "[DeskTicketHelper][background]";
+
+function logDebug(message, details) {
+  console.debug(LOG_SCOPE, message, details ?? "");
+}
+
+function logInfo(message, details) {
+  console.info(LOG_SCOPE, message, details ?? "");
+}
+
+function logWarn(message, details) {
+  console.warn(LOG_SCOPE, message, details ?? "");
+}
+
+function logError(message, details) {
+  console.error(LOG_SCOPE, message, details ?? "");
+}
+
+function serializeError(error) {
+  if (!error) {
+    return { message: "Unknown error" };
+  }
+
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  };
+}
+
+function summarizeResource(resource) {
+  if (resource == null) return null;
+  if (Array.isArray(resource)) return { type: "array", length: resource.length };
+  if (typeof resource !== "object") return resource;
+
+  const summary = {};
+  const interestingKeys = [
+    "id",
+    "status",
+    "closed",
+    "closedBy",
+    "customerIdentity",
+    "agentIdentity",
+    "team",
+    "identity",
+    "name",
+  ];
+
+  for (const key of interestingKeys) {
+    if (resource[key] != null) {
+      summary[key] = resource[key];
+    }
+  }
+
+  summary.keys = Object.keys(resource).slice(0, 12);
+  return summary;
+}
+
+function summarizeRequest(options) {
+  const request = {
+    method: options?.method,
+    headers: { ...(options?.headers || {}) },
+  };
+
+  if (request.headers.Authorization) {
+    request.headers.Authorization = "[redacted]";
+  }
+
+  if (options?.body) {
+    try {
+      const parsed = JSON.parse(options.body);
+      request.body = {
+        id: parsed.id,
+        to: parsed.to,
+        method: parsed.method,
+        uri: parsed.uri,
+        type: parsed.type,
+        resource: summarizeResource(parsed.resource),
+      };
+    } catch {
+      request.body = String(options.body).slice(0, 300);
+    }
+  }
+
+  return request;
+}
+
+function summarizePayload(payload) {
+  if (payload == null) return null;
+  if (typeof payload === "string") return { textPreview: payload.slice(0, 200) };
+  if (Array.isArray(payload)) return { type: "array", length: payload.length };
+  if (typeof payload !== "object") return payload;
+
+  const summary = {
+    keys: Object.keys(payload).slice(0, 12),
+  };
+
+  if (payload.id) summary.id = payload.id;
+  if (payload.status) summary.status = payload.status;
+  if (payload.resource?.items && Array.isArray(payload.resource.items)) {
+    summary.resourceItems = payload.resource.items.length;
+  }
+  if (payload.resource) {
+    summary.resource = summarizeResource(payload.resource);
+  }
+
+  return summary;
+}
+
+function summarizeTicket(ticket) {
+  if (!ticket) return null;
+
+  return {
+    id: ticket.id,
+    closed: ticket.closed,
+    status: ticket.status,
+    agentIdentity: ticket.agentIdentity,
+    normalizedAgentIdentity: normalizeIdentityForCompare(ticket.agentIdentity),
+    customerIdentity: ticket.customerIdentity,
+  };
+}
+
+function summarizeAgentDistribution(tickets, limit = 10) {
+  const counts = new Map();
+
+  for (const ticket of tickets) {
+    const key = normalizeIdentityForCompare(ticket?.agentIdentity) || "(empty)";
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+    .map(([agentIdentity, count]) => ({ agentIdentity, count }));
+}
+
+function resolveEnvironmentFromUrl(tabUrl) {
+  if (!tabUrl) {
+    return "hmg";
+  }
+
+  try {
+    const hostname = new URL(tabUrl).hostname.toLowerCase();
+
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+      return "hmg";
+    }
+
+    if (hostname.includes("hmg")) {
+      return "hmg";
+    }
+
+    return "prod";
+  } catch {
+    return "hmg";
+  }
+}
+
+function resolveCommandsContext(tabUrl) {
+  const environment = resolveEnvironmentFromUrl(tabUrl);
+  return {
+    environment,
+    commandsBaseUrl: COMMANDS_BASE_URLS[environment],
+    tabUrl: tabUrl || null,
+  };
+}
 
 async function sleep(ms) {
   if (!ms) return;
-  await new Promise((r) => setTimeout(r, ms));
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function loadConfigOrThrow() {
+async function loadConfigOrThrow(traceId) {
   const { apiKey, botShortName } = await chrome.storage.sync.get(["apiKey", "botShortName"]);
-  if (!apiKey) throw new Error("API key não configurada. Salve no popup.");
-  if (!botShortName) throw new Error("Bot short name não configurado. Salve no popup (ex: scarathuhmg).");
-  return { apiKey: apiKey.trim(), botShortName: botShortName.trim() };
+
+  if (!apiKey) {
+    logWarn("Missing API key in extension storage", { traceId });
+    throw new Error("API key nao configurada. Salve no popup.");
+  }
+
+  if (!botShortName) {
+    logWarn("Missing bot short name in extension storage", { traceId });
+    throw new Error("Bot short name nao configurado. Salve no popup (ex: scarathuhmg).");
+  }
+
+  const config = { apiKey: apiKey.trim(), botShortName: botShortName.trim() };
+  logInfo("Loaded extension config", {
+    traceId,
+    botShortName: config.botShortName,
+    hasApiKey: Boolean(config.apiKey),
+  });
+
+  return config;
 }
 
 function makeHeaders(apiKey) {
   return {
-    Authorization: apiKey, // cole exatamente como sua key exige (ex: "Key ...")
+    Authorization: apiKey,
     "Content-Type": "application/json",
   };
 }
 
-async function doFetchOrThrow(url, options) {
-  const resp = await fetch(url, options);
-  const text = await resp.text();
-  if (!resp.ok) throw new Error(`HTTP ${resp.status} - ${text.slice(0, 300)}`);
+function parseJsonIfPossible(text) {
   try {
     return JSON.parse(text);
   } catch {
@@ -34,53 +214,184 @@ async function doFetchOrThrow(url, options) {
   }
 }
 
-async function runInBatches(total, batchSize, delayMs, fn) {
+async function doFetchOrThrow(url, options, meta = {}) {
+  const startedAt = Date.now();
+  logInfo("Starting HTTP request", {
+    ...meta,
+    url,
+    request: summarizeRequest(options),
+  });
+
+  try {
+    const response = await fetch(url, options);
+    const text = await response.text();
+    const durationMs = Date.now() - startedAt;
+
+    if (!response.ok) {
+      logError("HTTP request failed", {
+        ...meta,
+        url,
+        status: response.status,
+        durationMs,
+        responsePreview: text.slice(0, 300),
+      });
+      throw new Error(`HTTP ${response.status} - ${text.slice(0, 300)}`);
+    }
+
+    const parsed = parseJsonIfPossible(text);
+    logInfo("HTTP request succeeded", {
+      ...meta,
+      url,
+      status: response.status,
+      durationMs,
+      response: summarizePayload(parsed),
+    });
+
+    return parsed;
+  } catch (error) {
+    if (!(error instanceof Error && error.message.startsWith("HTTP "))) {
+      logError("Unexpected fetch error", {
+        ...meta,
+        url,
+        durationMs: Date.now() - startedAt,
+        error: serializeError(error),
+      });
+    }
+    throw error;
+  }
+}
+
+async function runInBatches(total, batchSize, delayMs, fn, meta = {}) {
   const settledAll = [];
-  for (let i = 0; i < total; i += batchSize) {
-    const size = Math.min(batchSize, total - i);
-    const batch = Array.from({ length: size }, (_, idx) => fn(i + idx));
+
+  if (total === 0) {
+    logWarn("runInBatches called with zero items", meta);
+    return settledAll;
+  }
+
+  for (let index = 0; index < total; index += batchSize) {
+    const size = Math.min(batchSize, total - index);
+    const batchNumber = Math.floor(index / batchSize) + 1;
+
+    logInfo("Starting batch", {
+      ...meta,
+      batchNumber,
+      batchSize: size,
+      startIndex: index,
+      total,
+      delayMs,
+    });
+
+    const batch = Array.from({ length: size }, (_, offset) => fn(index + offset));
     const settled = await Promise.allSettled(batch);
     settledAll.push(...settled);
-    if (i + batchSize < total) await sleep(delayMs);
+
+    logInfo("Finished batch", {
+      ...meta,
+      batchNumber,
+      summary: summarizeSettled(settled),
+    });
+
+    if (index + batchSize < total) {
+      await sleep(delayMs);
+    }
   }
+
   return settledAll;
 }
 
 function summarizeSettled(settled) {
   const summary = { ok: 0, fail: 0, errors: [] };
-  for (const s of settled) {
-    if (s.status === "fulfilled") summary.ok += 1;
-    else summary.fail += 1, summary.errors.push(String(s.reason?.message || s.reason).slice(0, 300));
+
+  for (const item of settled) {
+    if (item.status === "fulfilled") {
+      summary.ok += 1;
+      continue;
+    }
+
+    summary.fail += 1;
+    summary.errors.push(String(item.reason?.message || item.reason).slice(0, 300));
   }
+
   return summary;
 }
 
-// ---------------- Random name generator ----------------
-
 function getRandomName() {
   const firstNames = [
-    "João", "Maria", "Ana", "Pedro", "José", "Carlos", "Luiz", "Lucas", "Rafael", "Felipe",
-    "Gabriel", "Bruno", "André", "Fernando", "Marcos", "Paulo", "Rodrigo", "Thiago", "Mateus", "Diego",
-    "Juliana", "Beatriz", "Fernanda", "Camila", "Amanda", "Larissa", "Patrícia", "Carla", "Renata", "Mariana"
+    "Joao",
+    "Maria",
+    "Ana",
+    "Pedro",
+    "Jose",
+    "Carlos",
+    "Luiz",
+    "Lucas",
+    "Rafael",
+    "Felipe",
+    "Gabriel",
+    "Bruno",
+    "Andre",
+    "Fernando",
+    "Marcos",
+    "Paulo",
+    "Rodrigo",
+    "Thiago",
+    "Mateus",
+    "Diego",
+    "Juliana",
+    "Beatriz",
+    "Fernanda",
+    "Camila",
+    "Amanda",
+    "Larissa",
+    "Patricia",
+    "Carla",
+    "Renata",
+    "Mariana",
   ];
-  
+
   const lastNames = [
-    "Silva", "Santos", "Oliveira", "Souza", "Rodrigues", "Ferreira", "Alves", "Pereira", "Lima", "Gomes",
-    "Costa", "Ribeiro", "Martins", "Carvalho", "Rocha", "Almeida", "Nascimento", "Araújo", "Melo", "Barbosa",
-    "Cardoso", "Dias", "Monteiro", "Mendes", "Castro", "Campos", "Freitas", "Moreira", "Pinto", "Cavalcanti"
+    "Silva",
+    "Santos",
+    "Oliveira",
+    "Souza",
+    "Rodrigues",
+    "Ferreira",
+    "Alves",
+    "Pereira",
+    "Lima",
+    "Gomes",
+    "Costa",
+    "Ribeiro",
+    "Martins",
+    "Carvalho",
+    "Rocha",
+    "Almeida",
+    "Nascimento",
+    "Araujo",
+    "Melo",
+    "Barbosa",
+    "Cardoso",
+    "Dias",
+    "Monteiro",
+    "Mendes",
+    "Castro",
+    "Campos",
+    "Freitas",
+    "Moreira",
+    "Pinto",
+    "Cavalcanti",
   ];
-  
+
   const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
   const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
-  
+
   return `${firstName} ${lastName}`;
 }
 
-// ---------------- Commands builders ----------------
-
-function buildCreateContactCommand(apiKey, contactIdentity) {
+function buildCreateContactCommand(commandsBaseUrl, apiKey, contactIdentity) {
   return {
-    url: COMMANDS_BASE_URL,
+    url: commandsBaseUrl,
     options: {
       method: "POST",
       headers: makeHeaders(apiKey),
@@ -102,9 +413,9 @@ function buildCreateContactCommand(apiKey, contactIdentity) {
   };
 }
 
-function buildCreateTicketCommand(apiKey, customerIdentity) {
+function buildCreateTicketCommand(commandsBaseUrl, apiKey, customerIdentity) {
   return {
-    url: COMMANDS_BASE_URL,
+    url: commandsBaseUrl,
     options: {
       method: "POST",
       headers: makeHeaders(apiKey),
@@ -120,9 +431,9 @@ function buildCreateTicketCommand(apiKey, customerIdentity) {
   };
 }
 
-function buildGetTicketsCommand(apiKey) {
+function buildGetTicketsCommand(commandsBaseUrl, apiKey) {
   return {
-    url: COMMANDS_BASE_URL,
+    url: commandsBaseUrl,
     options: {
       method: "POST",
       headers: makeHeaders(apiKey),
@@ -136,9 +447,9 @@ function buildGetTicketsCommand(apiKey) {
   };
 }
 
-function buildCloseTicketCommand(apiKey, ticketId, closedBy) {
+function buildCloseTicketCommand(commandsBaseUrl, apiKey, ticketId, closedBy) {
   return {
-    url: COMMANDS_BASE_URL,
+    url: commandsBaseUrl,
     options: {
       method: "POST",
       headers: makeHeaders(apiKey),
@@ -151,7 +462,7 @@ function buildCloseTicketCommand(apiKey, ticketId, closedBy) {
         resource: {
           id: ticketId,
           status: "ClosedAttendant",
-          closedBy: closedBy,
+          closedBy,
         },
       }),
     },
@@ -166,6 +477,7 @@ function normalizeClosedBy(agentIdentity) {
 
 function normalizeIdentityForCompare(identity) {
   if (!identity) return "";
+
   let normalized;
   try {
     normalized = decodeURIComponent(identity).toLowerCase();
@@ -185,163 +497,309 @@ function isTicketFromCurrentAgent(ticket, agentIdentity) {
   return Boolean(current) && Boolean(fromTicket) && current === fromTicket;
 }
 
-async function closeTicketWithFallback(apiKey, ticketId, closedBy) {
+async function closeTicketWithFallback(commandsBaseUrl, apiKey, ticketId, closedBy, meta = {}) {
   try {
-    const withClosedBy = buildCloseTicketCommand(apiKey, ticketId, closedBy);
-    await doFetchOrThrow(withClosedBy.url, withClosedBy.options);
+    logDebug("Closing ticket with closedBy", { ...meta, ticketId, closedBy });
+    const withClosedBy = buildCloseTicketCommand(commandsBaseUrl, apiKey, ticketId, closedBy);
+    await doFetchOrThrow(withClosedBy.url, withClosedBy.options, {
+      ...meta,
+      operation: "closeTicket",
+      ticketId,
+      mode: "withClosedBy",
+    });
     return { ticketId, mode: "withClosedBy" };
   } catch (error) {
-    const withoutClosedBy = buildCloseTicketCommand(apiKey, ticketId, undefined);
+    logWarn("Closing ticket with closedBy failed, retrying without closedBy", {
+      ...meta,
+      ticketId,
+      closedBy,
+      error: serializeError(error),
+    });
+
+    const withoutClosedBy = buildCloseTicketCommand(commandsBaseUrl, apiKey, ticketId, undefined);
     const body = JSON.parse(withoutClosedBy.options.body);
     delete body.resource.closedBy;
     withoutClosedBy.options.body = JSON.stringify(body);
-    await doFetchOrThrow(withoutClosedBy.url, withoutClosedBy.options);
-    return { ticketId, mode: "withoutClosedBy", warning: String(error?.message || error).slice(0, 300) };
+
+    await doFetchOrThrow(withoutClosedBy.url, withoutClosedBy.options, {
+      ...meta,
+      operation: "closeTicket",
+      ticketId,
+      mode: "withoutClosedBy",
+    });
+
+    logWarn("Ticket closed without closedBy", { ...meta, ticketId });
+    return {
+      ticketId,
+      mode: "withoutClosedBy",
+      warning: String(error?.message || error).slice(0, 300),
+    };
   }
 }
 
+async function getAgentFromTab(tabId, traceId) {
+  logInfo("Requesting agent identity from tab", { traceId, tabId });
+  const response = await chrome.tabs.sendMessage(tabId, { type: "GET_AGENT" });
+  logInfo("Received agent identity response", { traceId, tabId, response });
 
-async function getAgentFromTab(tabId) {
-  const res = await chrome.tabs.sendMessage(tabId, { type: "GET_AGENT" });
-  if (!res?.ok) throw new Error("GET_AGENT falhou. Recarregue a página do Desk (F5) e atualize a extensão.");
-  return res.agentIdentity;
+  if (!response?.ok) {
+    throw new Error("GET_AGENT falhou. Recarregue a pagina do Desk (F5) e atualize a extensao.");
+  }
+
+  return response.agentIdentity;
 }
 
-async function getDeskDataFromTab(tabId) {
-  const res = await chrome.tabs.sendMessage(tabId, { type: "GET_DESK_DATA" });
-  if (!res?.ok) throw new Error("GET_DESK_DATA falhou. Recarregue a página do Desk (F5).");
-  return res; // { ok, agentIdentity, ticketIds, debug }
+async function getDeskDataFromTab(tabId, traceId) {
+  logInfo("Requesting desk data from tab", { traceId, tabId });
+  const response = await chrome.tabs.sendMessage(tabId, { type: "GET_DESK_DATA" });
+  logInfo("Received desk data response", {
+    traceId,
+    tabId,
+    ticketCount: response?.ticketIds?.length || 0,
+    debug: response?.debug,
+  });
+
+  if (!response?.ok) {
+    throw new Error("GET_DESK_DATA falhou. Recarregue a pagina do Desk (F5).");
+  }
+
+  return response;
 }
 
-// ---------------- Message router ----------------
+async function getCommandsContextFromTab(tabId, traceId) {
+  const tab = await chrome.tabs.get(tabId);
+  const context = resolveCommandsContext(tab?.url);
+
+  logInfo("Resolved commands endpoint for tab", {
+    traceId,
+    tabId,
+    tabUrl: tab?.url || null,
+    environment: context.environment,
+    commandsBaseUrl: context.commandsBaseUrl,
+  });
+
+  return context;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  const traceId = crypto.randomUUID().slice(0, 8);
+
   (async () => {
     try {
+      logInfo("Received runtime message", {
+        traceId,
+        type: msg?.type,
+        payload: msg?.payload || null,
+        senderTabId: sender?.tab?.id || null,
+      });
+
       if (msg?.type === "PROBE_CONTEXT") {
-        const { tabId } = msg.payload;
+        const { tabId } = msg.payload || {};
+        const agentIdentity = await getAgentFromTab(tabId, traceId);
+        const desk = await getDeskDataFromTab(tabId, traceId);
 
-        const agentIdentity = await getAgentFromTab(tabId);
-        const desk = await getDeskDataFromTab(tabId);
-
-        sendResponse({
+        const probeResponse = {
           ok: true,
           action: "PROBE_CONTEXT",
           agentIdentity,
           ticketCount: desk?.ticketIds?.length || 0,
           debug: desk?.debug || null,
-        });
+        };
+
+        logInfo("Probe context completed", { traceId, response: probeResponse });
+        sendResponse(probeResponse);
         return;
       }
 
       if (msg?.type === "CREATE_TICKETS") {
-        const { qty, batchSize, delayMs } = msg.payload;
+        const { qty = 0, batchSize = 1, delayMs = 0 } = msg.payload || {};
+        const { apiKey, botShortName } = await loadConfigOrThrow(traceId);
+        const { environment, commandsBaseUrl, tabUrl } = await getCommandsContextFromTab(msg.payload?.tabId, traceId);
 
-        const { apiKey, botShortName } = await loadConfigOrThrow();
-        const ownerIdentity = `${botShortName}@msging.net`;
-
-        const settled = await runInBatches(qty, batchSize, delayMs, async () => {
-          const customerIdentity = `${crypto.randomUUID()}.${botShortName}@0mn.io`;
-
-          // 1) CRM contact
-          {
-            const { url, options } = buildCreateContactCommand(apiKey, customerIdentity);
-            await doFetchOrThrow(url, options);
-          }
-
-          // 2) Desk ticket
-          {
-            const { url, options } = buildCreateTicketCommand(apiKey, customerIdentity);
-            await doFetchOrThrow(url, options);
-          }
-
-          // // 3) Attendance message
-          // {
-          //   const { url, options } = buildCreateAttendanceCommand(apiKey, customerIdentity);
-          //   await doFetchOrThrow(url, options);
-          // }
-
-          return { customerIdentity };
+        logInfo("Starting ticket creation flow", {
+          traceId,
+          qty,
+          batchSize,
+          delayMs,
+          botShortName,
+          environment,
+          commandsBaseUrl,
+          tabUrl,
         });
 
-        sendResponse({
+        const settled = await runInBatches(
+          qty,
+          batchSize,
+          delayMs,
+          async () => {
+            const customerIdentity = `${crypto.randomUUID()}.${botShortName}@0mn.io`;
+
+            const createContact = buildCreateContactCommand(commandsBaseUrl, apiKey, customerIdentity);
+            await doFetchOrThrow(createContact.url, createContact.options, {
+              traceId,
+              operation: "createContact",
+              customerIdentity,
+              environment,
+            });
+
+            const createTicket = buildCreateTicketCommand(commandsBaseUrl, apiKey, customerIdentity);
+            await doFetchOrThrow(createTicket.url, createTicket.options, {
+              traceId,
+              operation: "createTicket",
+              customerIdentity,
+              environment,
+            });
+
+            return { customerIdentity };
+          },
+          { traceId, operation: "createTickets" }
+        );
+
+        const createResponse = {
           ok: true,
           action: "CREATE_TICKETS",
           created: qty,
+          environment,
+          commandsBaseUrl,
           details: summarizeSettled(settled),
-        });
+        };
+
+        logInfo("Ticket creation flow completed", { traceId, response: createResponse });
+        sendResponse(createResponse);
         return;
       }
 
       if (msg?.type === "CLOSE_ALL_TICKETS") {
-        const { apiKey } = await loadConfigOrThrow();
-        const { tabId } = msg.payload;
+        const { apiKey } = await loadConfigOrThrow(traceId);
+        const { tabId } = msg.payload || {};
+        const { environment, commandsBaseUrl, tabUrl } = await getCommandsContextFromTab(tabId, traceId);
 
-        // 1) Obter o agentIdentity do atendente atual
-        const agentIdentity = await getAgentFromTab(tabId);
+        const agentIdentity = await getAgentFromTab(tabId, traceId);
         const closedBy = normalizeClosedBy(agentIdentity);
-    
-        // 2) Buscar todos os tickets via API
-        const { url, options } = buildGetTicketsCommand(apiKey);
-        const response = await doFetchOrThrow(url, options);
 
-        if (!response?.resource?.items) {
+        logInfo("Starting close tickets flow", {
+          traceId,
+          tabId,
+          tabUrl,
+          agentIdentity,
+          normalizedAgentIdentity: normalizeIdentityForCompare(agentIdentity),
+          closedBy,
+          environment,
+          commandsBaseUrl,
+        });
+
+        const getTickets = buildGetTicketsCommand(commandsBaseUrl, apiKey);
+        const ticketsResponse = await doFetchOrThrow(getTickets.url, getTickets.options, {
+          traceId,
+          operation: "getTickets",
+          environment,
+        });
+
+        if (!ticketsResponse?.resource?.items) {
+          logError("Unexpected ticket listing response", {
+            traceId,
+            response: summarizePayload(ticketsResponse),
+          });
           throw new Error("Resposta invalida ao buscar tickets.");
         }
 
-        const tickets = response.resource.items;
-        const openTickets = tickets.filter((t) => !t.closed);
-        const agentTickets = openTickets.filter((t) => isTicketFromCurrentAgent(t, agentIdentity));
+        const tickets = ticketsResponse.resource.items;
+        const openTickets = tickets.filter((ticket) => !ticket.closed);
+        const agentTickets = openTickets.filter((ticket) => isTicketFromCurrentAgent(ticket, agentIdentity));
+
+        logInfo("Calculated ticket groups for closing", {
+          traceId,
+          ticketsFound: tickets.length,
+          openTicketsFound: openTickets.length,
+          ticketsToClose: agentTickets.length,
+          currentAgent: agentIdentity,
+          normalizedCurrentAgent: normalizeIdentityForCompare(agentIdentity),
+          openTicketAgents: summarizeAgentDistribution(openTickets),
+          openTicketSample: openTickets.slice(0, 5).map(summarizeTicket),
+          agentTicketSample: agentTickets.slice(0, 5).map(summarizeTicket),
+        });
 
         if (agentTickets.length === 0) {
-          sendResponse({
+          const emptyResponse = {
             ok: true,
             action: "CLOSE_ALL_TICKETS",
             message: "Nenhum ticket aberto vinculado ao agente atual.",
-            agentIdentity: agentIdentity,
-            closedBy: closedBy,
+            agentIdentity,
+            closedBy,
+            environment,
+            commandsBaseUrl,
             ticketsFound: tickets.length,
             openTicketsFound: openTickets.length,
             ticketsToClose: 0,
-            openTicketsAgentSample: openTickets.slice(0, 5).map((t) => ({
-              id: t.id,
-              agentIdentity: t.agentIdentity,
-              normalizedAgentIdentity: normalizeIdentityForCompare(t.agentIdentity),
+            openTicketsAgentSample: openTickets.slice(0, 5).map((ticket) => ({
+              id: ticket.id,
+              agentIdentity: ticket.agentIdentity,
+              normalizedAgentIdentity: normalizeIdentityForCompare(ticket.agentIdentity),
             })),
             details: { ok: 0, fail: 0, errors: [] },
+          };
+
+          logWarn("No open tickets matched the current agent", {
+            traceId,
+            currentAgent: agentIdentity,
+            normalizedCurrentAgent: normalizeIdentityForCompare(agentIdentity),
+            openTicketAgents: summarizeAgentDistribution(openTickets),
           });
+
+          sendResponse(emptyResponse);
           return;
         }
 
-        // 3) Fechar cada ticket aberto em lotes (com closedBy = agente atual)
-        const settled = await runInBatches(agentTickets.length, 10, 300, async (idx) => {
-          const ticket = agentTickets[idx];
-          return closeTicketWithFallback(apiKey, ticket.id, closedBy);
-        });
+        const settled = await runInBatches(
+          agentTickets.length,
+          10,
+          300,
+          async (index) => {
+            const ticket = agentTickets[index];
+            return closeTicketWithFallback(commandsBaseUrl, apiKey, ticket.id, closedBy, {
+              traceId,
+              agentIdentity,
+              normalizedAgentIdentity: normalizeIdentityForCompare(agentIdentity),
+              environment,
+            });
+          },
+          { traceId, operation: "closeTickets", environment, commandsBaseUrl }
+        );
 
         const fallbackCount = settled.filter(
-          (s) => s.status === "fulfilled" && s.value?.mode === "withoutClosedBy"
+          (item) => item.status === "fulfilled" && item.value?.mode === "withoutClosedBy"
         ).length;
 
-        sendResponse({
+        const closeResponse = {
           ok: true,
           action: "CLOSE_ALL_TICKETS",
-          agentIdentity: agentIdentity,
-          closedBy: closedBy,
+          agentIdentity,
+          closedBy,
+          environment,
+          commandsBaseUrl,
           ticketsFound: tickets.length,
           openTicketsFound: openTickets.length,
           ticketsToClose: agentTickets.length,
           fallbackWithoutClosedBy: fallbackCount,
           details: summarizeSettled(settled),
-        });
+        };
+
+        logInfo("Close tickets flow completed", { traceId, response: closeResponse });
+        sendResponse(closeResponse);
         return;
       }
 
+      logWarn("Unknown runtime message type", { traceId, type: msg?.type });
       sendResponse({ ok: false, error: "Tipo de mensagem desconhecido." });
-    } catch (e) {
-      sendResponse({ ok: false, error: e.message });
+    } catch (error) {
+      logError("Runtime message handler failed", {
+        traceId,
+        type: msg?.type,
+        error: serializeError(error),
+      });
+      sendResponse({ ok: false, error: error?.message || String(error) });
     }
   })();
 
-  return true; // async
+  return true;
 });
