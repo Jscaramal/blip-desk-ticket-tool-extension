@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Desk Ticket Helper",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Cria tickets em lote (0mn.io) e fecha todos os tickets capturados no Desk.",
   "icons": {
     "16": "img/icon16.png",
@@ -31,7 +31,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.blip.ai/*"],
+      "matches": [
+        "https://*.blip.ai/*",
+        "http://localhost/*",
+        "https://localhost/*",
+        "http://127.0.0.1/*",
+        "https://127.0.0.1/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

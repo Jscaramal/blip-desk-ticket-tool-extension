@@ -539,7 +539,19 @@ async function closeTicketWithFallback(commandsBaseUrl, apiKey, ticketId, closed
 
 async function getAgentFromTab(tabId, traceId) {
   logInfo("Requesting agent identity from tab", { traceId, tabId });
-  const response = await chrome.tabs.sendMessage(tabId, { type: "GET_AGENT" });
+  let response;
+  try {
+    response = await chrome.tabs.sendMessage(tabId, { type: "GET_AGENT" });
+  } catch (error) {
+    logError("Failed to reach content script for GET_AGENT", {
+      traceId,
+      tabId,
+      error: serializeError(error),
+    });
+    throw new Error(
+      "Nao foi possivel falar com a aba atual. Recarregue a pagina e confirme que a URL esta coberta pelo manifest da extensao (blip.ai/localhost)."
+    );
+  }
   logInfo("Received agent identity response", { traceId, tabId, response });
 
   if (!response?.ok) {
@@ -551,7 +563,19 @@ async function getAgentFromTab(tabId, traceId) {
 
 async function getDeskDataFromTab(tabId, traceId) {
   logInfo("Requesting desk data from tab", { traceId, tabId });
-  const response = await chrome.tabs.sendMessage(tabId, { type: "GET_DESK_DATA" });
+  let response;
+  try {
+    response = await chrome.tabs.sendMessage(tabId, { type: "GET_DESK_DATA" });
+  } catch (error) {
+    logError("Failed to reach content script for GET_DESK_DATA", {
+      traceId,
+      tabId,
+      error: serializeError(error),
+    });
+    throw new Error(
+      "Nao foi possivel ler os dados da aba atual. Recarregue a pagina e confirme que a URL esta coberta pelo manifest da extensao (blip.ai/localhost)."
+    );
+  }
   logInfo("Received desk data response", {
     traceId,
     tabId,
